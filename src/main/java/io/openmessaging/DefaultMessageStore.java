@@ -23,18 +23,23 @@ public class DefaultMessageStore {
 
     private final CommitLog commitLog;
 
-    private final ConcurrentMap<Integer, QueueIndex> queueIndexTable;
+    private final ConcurrentMap<String, QueueIndex> queueIndexTable;
 
-    private final ConcurrentMap<Integer, List<byte[]>> queueMsgCache;
+    private final ConcurrentMap<String, List<byte[]>> queueMsgCache;
+
+    private final LinkedConsumeQueue linkedConsumeQueue;
 
     public DefaultMessageStore(final MessageStoreConfig messageStoreConfig) {
         this.messageStoreConfig = messageStoreConfig;
         this.commitLog = new CommitLog(this);
+
+        linkedConsumeQueue = new LinkedConsumeQueue(this.getMessageStoreConfig().getStorePathConsumeQueue(), 1024*1024*1024,  400);
+
         this.queueIndexTable = new ConcurrentHashMap<>(MAX_QUEUE_NUM);
         this.queueMsgCache = new ConcurrentHashMap<>(MAX_QUEUE_NUM);
     }
 
-    public void putMessage(int topic, byte[] msg) {
+    public void putMessage(String topic, byte[] msg) {
 //        System.out.println(topic + "  -------  " + new String(msg));
         List<byte[]> msgList = queueMsgCache.get(topic);
         if (msgList == null) {
@@ -53,13 +58,19 @@ public class DefaultMessageStore {
         }
     }
 
-    public List<byte[]> getMessage(int topic, long offset, long maxMsgNums) {
+    public List<byte[]> getMessage(String topic, long offset, long maxMsgNums) {
         long off = offset;
         long nums = maxMsgNums;
-        QueueIndex index = queueIndexTable.get(topic);
+
+//        QueueIndex index = queueIndexTable.get(topic);
         List<byte[]> msgList = new ArrayList<>();
-        while (nums > 0 && index.getIndex((int) off) != -1) {
-            long fileOffset = index.getIndex((int) off);
+        while (nums > 0) {
+            long fileOffset = linkedConsumeQueue.getMessagePosition(topic, (int)off / SparseSize);
+
+            if(fileOffset == -1){
+                break;
+            }
+//            System.out.println("a");
             int start = (int) off % SparseSize;
             int end = Math.min(start + (int) nums, SparseSize) - 1;
             try {
@@ -70,6 +81,7 @@ public class DefaultMessageStore {
 
             nums -= (end - start + 1);
             off += (end - start + 1);
+
         }
 
         List<byte[]> cache = queueMsgCache.get(topic);
@@ -81,20 +93,51 @@ public class DefaultMessageStore {
         return msgList;
     }
 
-    private void writeToCommitLog(int topic, List<byte[]> msgList) {
+//    public List<byte[]> getMessage(int topic, long offset, long maxMsgNums) {
+//        long off = offset;
+//        long nums = maxMsgNums;
+//        QueueIndex index = queueIndexTable.get(topic);
+//        List<byte[]> msgList = new ArrayList<>();
+//        while (nums > 0 && index.getIndex((int) off) != -1) {
+//            long fileOffset = index.getIndex((int) off);
+//            int start = (int) off % SparseSize;
+//            int end = Math.min(start + (int) nums, SparseSize) - 1;
+//            try {
+//                msgList.addAll(commitLog.getMessage(fileOffset, start, end));
+//            } catch (Exception e) {
+//                e.printStackTrace();
+//            }
+//
+//            nums -= (end - start + 1);
+//            off += (end - start + 1);
+//        }
+//
+//        List<byte[]> cache = queueMsgCache.get(topic);
+//        if (nums > 0 && !cache.isEmpty()) {
+//            int start = (int) off % SparseSize;
+//            int end = Math.min(cache.size(), start + (int) nums);
+//            msgList.addAll(cache.subList(start, end));
+//        }
+//        return msgList;
+//    }
+
+
+    private void writeToCommitLog(String topic, List<byte[]> msgList) {
         PutMessageResult result = this.commitLog.putMessage(msgList);
         if (result.isOk()) {
-            QueueIndex index = queueIndexTable.get(topic);
-            if (null == index) {
-                QueueIndex newIndex = new QueueIndex();
-                QueueIndex oldIndex = queueIndexTable.putIfAbsent(topic, newIndex);
-                if (oldIndex != null) {
-                    index = newIndex;
-                } else {
-                    index = newIndex;
-                }
-            }
-            index.putIndex(result.getAppendMessageResult().getWroteOffset());
+//            QueueIndex index = queueIndexTable.get(topic);
+//            if (null == index) {
+//                QueueIndex newIndex = new QueueIndex();
+//                QueueIndex oldIndex = queueIndexTable.putIfAbsent(topic, newIndex);
+//                if (oldIndex != null) {
+//                    index = newIndex;
+//                } else {
+//                    index = newIndex;
+//                }
+//            }
+//            index.putIndex(result.getAppendMessageResult().getWroteOffset());
+
+            linkedConsumeQueue.putMessagePositionInfo(topic, result.getAppendMessageResult().getWroteOffset());
         }
     }
 

@@ -15,10 +15,11 @@ public class MessageStoreConfig {
     private String storePathRootDir = "alidata1/race2018/data";
 
     //稀疏索引，每存多少个写一个索引
-    public static final int SparseSize = 16;//每隔20个存一次
+    public static final int SparseSize = 20;//每隔20个存一次
 
     //The directory in which the commitlog is kept
     private String storePathCommitLog = storePathRootDir + File.separator + "commitlog";
+    private String storePathConsumeQueue = storePathRootDir + File.separator + "consumequeue";
 
     // CommitLog file size,default is 1G
     private int mapedFileSizeCommitLog = 1024 * 1024 * 1024;
@@ -62,6 +63,10 @@ public class MessageStoreConfig {
 
         int factor = (int) Math.ceil(this.mapedFileSizeConsumeQueue / (ConsumeQueue.CQ_STORE_UNIT_SIZE * 1.0));
         return (int) (factor * ConsumeQueue.CQ_STORE_UNIT_SIZE);
+    }
+
+    public String getStorePathConsumeQueue() {
+        return storePathConsumeQueue;
     }
 
     public int getSparseSize() {
