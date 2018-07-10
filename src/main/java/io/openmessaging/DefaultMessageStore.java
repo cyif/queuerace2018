@@ -6,6 +6,10 @@ import sun.nio.ch.DirectBuffer;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -40,6 +44,9 @@ class DefaultMessageStore {
 
     private final AtomicBoolean consumeStart = new AtomicBoolean(false);
 
+    public static Future<Integer>[] futures = new Future[MAX_QUEUE_NUM];
+    public static int[] flag = new int[MAX_QUEUE_NUM];
+
     DefaultMessageStore(final MessageStoreConfig messageStoreConfig) {
         this.messageStoreConfig = messageStoreConfig;
 
@@ -51,6 +58,9 @@ class DefaultMessageStore {
             queueMsgCache[topicId] = new DirectQueueCache();
             queueIndexTable[topicId] = new QueueIndex();
             queueCache[topicId] = new QueueCache();
+
+            futures[topicId] = null;
+            flag[topicId] = 0;
         }
     }
 
@@ -60,11 +70,11 @@ class DefaultMessageStore {
 
     void putMessage(int topicId, byte[] msg) {
         DirectQueueCache cache = queueMsgCache[topicId];
-        int size = cache.addMessage(msg);
+        int size = cache.addMessage(msg, topicId);
         if (size == SparseSize) {
-            int offset = getCommitLog(topicId).putMessage(cache.getByteBuffer());
+            flag[topicId] = 1;
+            int offset = getCommitLog(topicId).putMessage(cache.getByteBuffer(), topicId);
             queueIndexTable[topicId].putIndex(offset);
-            cache.clear();
         }
     }
 

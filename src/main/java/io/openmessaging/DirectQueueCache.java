@@ -41,7 +41,13 @@ class DirectQueueCache {
         LibC.INSTANCE.munlock(pointer, new NativeLong(QUEUE_CACHE_SIZE));
     }
 
-    int addMessage(byte[] msg) {
+    int addMessage(byte[] msg, int topicId) {
+
+        if(DefaultMessageStore.flag[topicId] == 1){
+            while (!DefaultMessageStore.futures[topicId].isDone());
+            DefaultMessageStore.flag[topicId] = 0;
+            clear();
+        }
         byteBuffer.put((byte) msg.length);
         byteBuffer.put(msg);
         byteBuffer.position(++size * MESSAGE_SIZE);

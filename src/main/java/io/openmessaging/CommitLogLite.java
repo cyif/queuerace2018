@@ -14,8 +14,13 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
+import java.nio.channels.AsynchronousFileChannel;
 import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.openmessaging.config.MessageStoreConfig.MESSAGE_SIZE;
@@ -43,6 +48,7 @@ public class CommitLogLite {
     private MappedByteBuffer mappedByteBuffer;
 
     /*映射的fileChannel对象*/
+    private AsynchronousFileChannel AsynfileChannel;
     private FileChannel fileChannel;
 
     /*文件尾指针*/
@@ -56,10 +62,13 @@ public class CommitLogLite {
 
         /*打开文件，并将文件映射到内存*/
         try {
-            File file = new File(storePath + File.separator + fileName.getAndIncrement());
+            String filename = File.separator + fileName.getAndIncrement();
+            File file = new File(storePath + filename);
             this.fileChannel = new RandomAccessFile(file, "rw").getChannel();
             this.mappedByteBuffer = this.fileChannel.map(FileChannel.MapMode.READ_WRITE, 0, mappedFileSize);
 
+            Path path = Paths.get(storePath + filename);
+            this.AsynfileChannel = AsynchronousFileChannel.open(path, StandardOpenOption.WRITE);
 //            warmup();
 
         } catch (FileNotFoundException e) {
@@ -80,15 +89,19 @@ public class CommitLogLite {
     }
 
     //写一串数据
-    int putMessage(ByteBuffer byteBuffer) {
+    int putMessage(ByteBuffer byteBuffer, int topic) {
 
         byteBuffer.flip();
         int currentPos = this.wrotePosition.getAndAdd(byteBuffer.limit());
-        try {
-            this.fileChannel.write(byteBuffer, currentPos);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+
+
+        DefaultMessageStore.futures[topic] = this.AsynfileChannel.write(byteBuffer, currentPos);
+
+//        try {
+//            this.fileChannel.write(byteBuffer, currentPos);
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
         return currentPos;
     }
 
